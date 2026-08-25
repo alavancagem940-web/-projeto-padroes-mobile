@@ -6,10 +6,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       throw new Error("Módulos principais não encontrados.");
     }
 
-    let backup;
+    let backupAtual;
 
     if (typeof Backup !== "undefined" && Array.isArray(Backup)) {
-      backup = Backup;
+      backupAtual = Backup;
     } else {
       const resposta = await fetch("./scripts/backup/backup.js", {
         cache: "no-store"
@@ -20,15 +20,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
 
       const textoBackup = (await resposta.text()).trim();
-      backup = JSON.parse(textoBackup);
+      backupAtual = JSON.parse(textoBackup);
     }
 
-    if (!Array.isArray(backup)) {
+    if (!Array.isArray(backupAtual)) {
       throw new Error("O backup carregado não contém uma lista válida de resultados.");
     }
 
-    // Disponibiliza o backup para os demais módulos.
-    globalThis.Backup = backup;
+    globalThis.Backup = backupAtual;
 
     Historico.iniciar();
 
@@ -36,14 +35,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       ? Armazenamento.obterDados()
       : [];
 
-    const VERSAO_BACKUP = "2026-08-25-877PLUS";
+    const VERSAO_BACKUP = "2026-08-24-700PLUS";
     const versaoLocal = localStorage.getItem("esportes_virtuais_backup_versao");
 
     const dadosIniciais = (
       versaoLocal === VERSAO_BACKUP &&
       Array.isArray(salvo) &&
-      salvo.length >= backup.length
-    ) ? salvo : backup;
+      salvo.length >= backupAtual.length
+    ) ? salvo : backupAtual;
 
     localStorage.setItem("esportes_virtuais_backup_versao", VERSAO_BACKUP);
 
