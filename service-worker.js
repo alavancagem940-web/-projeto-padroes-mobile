@@ -1,4 +1,5 @@
-const CACHE = "esportes-virtuais-mobile-v2";
+const CACHE = "esportes-virtuais-mobile-v3";
+
 const ASSETS = [
   "./",
   "./index.html",
@@ -24,14 +25,18 @@ const ASSETS = [
 ];
 
 self.addEventListener("install", event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
+  event.waitUntil(
+    caches.open(CACHE).then(cache => cache.addAll(ASSETS))
+  );
   self.skipWaiting();
 });
 
 self.addEventListener("activate", event => {
   event.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+      Promise.all(
+        keys.filter(k => k !== CACHE).map(k => caches.delete(k))
+      )
     )
   );
   self.clients.claim();
@@ -39,6 +44,7 @@ self.addEventListener("activate", event => {
 
 self.addEventListener("fetch", event => {
   if (event.request.method !== "GET") return;
+
   event.respondWith(
     caches.match(event.request).then(cached => {
       if (cached) return cached;
