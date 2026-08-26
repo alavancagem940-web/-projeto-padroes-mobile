@@ -28,12 +28,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     const versaoLocal = localStorage.getItem("esportes_virtuais_backup_versao");
     const salvo = typeof Armazenamento !== "undefined" ? Armazenamento.obterDados() : [];
 
-    // Captura somente objetos marcados como ao-vivo. Nenhum resultado do backup
-    // entra no histórico compartilhado.
-    const locaisAoVivo = Array.isArray(salvo)
-      ? salvo.filter(x => x && typeof x === "object" && x.fonte === "ao-vivo" && x.placar && x._temporal?.data && x._temporal?.horario)
-      : [];
-
     // Ao trocar de versão, metadados antigos de horários não devem contaminar a sessão.
     if (versaoLocal !== VERSAO_BACKUP && typeof Armazenamento !== "undefined") {
       Armazenamento.salvarMetadadosTemporais([]);
@@ -55,10 +49,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (typeof Interface !== "undefined" && Interface.atualizar) Interface.atualizar();
       });
       await Sincronizacao.iniciar();
-    } else if (locaisAoVivo.length) {
-      // Fallback local: sem banco configurado, preserva somente os resultados
-      // ao-vivo deste dispositivo. O backup continua separado.
-      Historico.importarResultadosAoVivo(locaisAoVivo, true);
+    } else {
+      // Sessão sempre começa limpa. Registros locais anteriores permanecem
+      // salvos no navegador, mas não são tratados como resultado recém-ocorrido
+      // quando o aplicativo é aberto novamente.
+      // Isso evita iniciar a sessão com o último placar antigo ou do backup.
     }
 
     // Se o app foi fechado durante uma partida, o último palpite salvo é
