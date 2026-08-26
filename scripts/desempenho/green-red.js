@@ -29,11 +29,51 @@ const GreenRed = {
     }
   },
 
-  _inicioContagem() {
-    if (typeof Backup !== "undefined" && Array.isArray(Backup)) {
-      return Backup.filter(x => x !== "PAUSA").length;
+  _inicioContagem(r) {
+    // O histórico/backup inteiro é somente BASE DE ESTUDO.
+    // Os indicadores GREEN/RED da sessão atual começam zerados.
+    // Os 3 primeiros resultados novos servem apenas para formar o contexto.
+    // A primeira previsão é feita para o 4º resultado novo; portanto,
+    // a primeira avaliação possível é o índice base + 3.
+    const base = Number(Historico?.obterQuantidadeBaseEstudo?.() ?? 0);
+    if (!Number.isFinite(base) || base < 0) return 1;
+    return Math.min(r.length, base + 3);
+  },
+
+  avaliarPalpiteRegistrado(alvo, registro) {
+    if (!alvo || !registro?.palpites) return null;
+    const p = registro.palpites;
+    const res = { previsoes: {} };
+    const ativo = k => p[k] && p[k].valor != null;
+
+    if (ativo("exato")) {
+      res.exato = p.exato.valor === alvo.placar;
+      res.previsoes.exato = p.exato.valor;
     }
-    return 0;
+    if (ativo("gols")) {
+      const previsto = Number(p.gols.valor);
+      res.gols = previsto === 5 ? alvo.totalGols >= 5 : previsto === alvo.totalGols;
+      res.previsoes.gols = p.gols.valor;
+    }
+    if (ativo("r12")) {
+      const v = p.r12.valor;
+      res.r12 = (v === "1" && alvo.golsCasa > alvo.golsFora) ||
+        (v === "X" && alvo.golsCasa === alvo.golsFora) ||
+        (v === "2" && alvo.golsCasa < alvo.golsFora);
+      res.previsoes.r12 = typeof MercadoResultado1X2 !== "undefined" ? MercadoResultado1X2.rotulo(v) : v;
+    }
+    if (ativo("bm")) {
+      const v = p.bm.valor === "SIM";
+      res.bm = v === (alvo.golsCasa > 0 && alvo.golsFora > 0);
+      res.previsoes.bm = p.bm.valor;
+    }
+    for (const [k, linha] of [["ou05",0.5],["ou15",1.5],["ou25",2.5],["ou35",3.5],["over35",3.5]]) {
+      if (!ativo(k)) continue;
+      const v = p[k].valor;
+      res[k] = v === "MAIS" ? alvo.totalGols > linha : alvo.totalGols < linha;
+      res.previsoes[k] = v === "MAIS" ? `Mais de ${linha}` : `Menos de ${linha}`;
+    }
+    return res;
   },
 
   avaliarPrevisao(resultados, indice) {
@@ -53,7 +93,13 @@ const GreenRed = {
     }
 
     if (ativo("gols")) {
-      res.gols = Number(m.gols.palpite.valor) === alvo.totalGols;
+      // O valor 5 do mercado de quantidade de gols representa
+      // "5 ou mais gols", e NÃO "exatamente 5 gols".
+      // Portanto, 5, 6, 7, 8... devem ser GREEN quando a previsão é 5+.
+      const previstoGols = Number(m.gols.palpite.valor);
+      res.gols = previstoGols === 5
+        ? alvo.totalGols >= 5
+        : previstoGols === alvo.totalGols;
       res.previsoes.gols = m.gols.palpite.valor;
     }
 
@@ -76,7 +122,8 @@ const GreenRed = {
       ["ou05", 0.5],
       ["ou15", 1.5],
       ["ou25", 2.5],
-      ["ou35", 3.5]
+      ["ou35", 3.5],
+      ["over35", 3.5]
     ]) {
       if (ativo(k)) {
         const v = m[k].palpite.valor;
@@ -105,7 +152,7 @@ const GreenRed = {
   resumo(r) {
     const chaves = [
       "exato", "ou05", "ou15", "ou25",
-      "ou35", "bm", "r12", "gols"
+      "ou35", "over35", "bm", "r12", "gols"
     ];
 
     const vazio = () => ({
@@ -129,13 +176,20 @@ const GreenRed = {
     this._prepararCache(r);
 
     const historicos = Object.fromEntries(chaves.map(k => [k, []]));
-    const inicio = this._inicioContagem();
+    const inicio = this._inicioContagem(r);
     let anterior = null;
 
     for (let i = inicio; i < r.length; i++) {
       if (i <= 0) continue;
 
-      const avaliacao = this._avaliacaoCache(r, i);
+      let avaliacao = null;
+      const alvo = r[i];
+      const registrado = (typeof PalpitesRegistrados !== "undefined" && alvo?._temporal)
+        ? PalpitesRegistrados.obterParaPartida(alvo._temporal)
+        : null;
+      avaliacao = registrado
+        ? this.avaliarPalpiteRegistrado(alvo, registrado)
+        : this._avaliacaoCache(r, i);
 
       if (i === r.length - 1) {
         anterior = avaliacao;
