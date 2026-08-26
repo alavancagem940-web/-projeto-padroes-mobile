@@ -9,8 +9,8 @@ const Interface = {
             <div class="entrada-resultados">
               <div class="rotulo-entrada">Registrar resultado do jogo encerrado</div>
               <div id="botoes-resultados" class="botoes-resultados"></div><div id="status-horario-entrada" class="status-horario-entrada"></div>
-              <div class="resultado-personalizado"><button id="btn-outro-placar" class="cinza">Outro placar</button><input id="campo-outro-placar" inputmode="numeric" placeholder="Ex.: 5x2" hidden><button id="btn-confirmar-outro" class="azul" hidden>Registrar</button></div>
-              <div class="resultado-outro-horario"><button id="btn-outro-horario" class="cinza">Resultado de outro horário</button><div id="form-outro-horario" class="form-outro-horario" hidden><input id="campo-outro-horario" type="time" step="180" aria-label="Horário da partida"><input id="campo-outro-resultado" inputmode="numeric" placeholder="Resultado (Ex.: 2x1)" aria-label="Resultado da partida"><button id="btn-confirmar-outro-horario" class="azul">Registrar</button></div></div>
+              <div class="resultado-personalizado"><button id="btn-outro-placar" class="cinza">Outro placar</button><div id="form-outro-placar" class="placar-separado" hidden><input id="campo-outro-casa" type="number" min="0" inputmode="numeric" placeholder="Casa" aria-label="Gols da casa"><span class="separador-x">x</span><input id="campo-outro-fora" type="number" min="0" inputmode="numeric" placeholder="Visitante" aria-label="Gols do visitante"><button id="btn-confirmar-outro" class="azul">Registrar</button></div></div>
+              <div class="resultado-outro-horario"><button id="btn-outro-horario" class="cinza">Resultado de outro horário</button><div id="form-outro-horario" class="form-outro-horario" hidden><input id="campo-outro-horario" type="time" step="180" aria-label="Horário da partida"><div class="placar-separado placar-outro-horario"><input id="campo-outro-horario-casa" type="number" min="0" inputmode="numeric" placeholder="Casa" aria-label="Gols da casa"><span class="separador-x">x</span><input id="campo-outro-horario-fora" type="number" min="0" inputmode="numeric" placeholder="Visitante" aria-label="Gols do visitante"></div><button id="btn-confirmar-outro-horario" class="azul">Registrar</button></div></div>
               <button id="btn-pausar" class="amarelo">▮▮ Pausa</button>
             </div>
             <div class="acoes"><button id="btn-salvar" class="verde">▣ Salvar na Pasta</button><button id="btn-carregar" class="ciano">▰ Carregar da Pasta</button><input id="arquivo-carregar" type="file" accept="application/json" hidden></div>
@@ -44,26 +44,32 @@ const Interface = {
         const resultadosRapidos=['0x0','1x0','0x1','1x1','2x0','0x2','2x1','1x2','2x2','3x0','0x3','3x1','1x3','3x2','2x3','3x3','4x0','0x4','4x1','1x4','4x2','2x4','4x3','3x4','4x4'];
         container.innerHTML=resultadosRapidos.map(v=>`<button class="btn-placar" data-placar="${v}">${v}</button>`).join('');
         container.querySelectorAll('.btn-placar').forEach(btn=>btn.onclick=()=>this.registrarRapido(btn.dataset.placar));
-        const outro=document.getElementById('btn-outro-placar'), campoOutro=document.getElementById('campo-outro-placar'), confirmar=document.getElementById('btn-confirmar-outro');
-        outro.onclick=()=>{campoOutro.hidden=!campoOutro.hidden;confirmar.hidden=campoOutro.hidden;if(!campoOutro.hidden)campoOutro.focus();};
-        confirmar.onclick=()=>{this.registrarRapido(campoOutro.value.trim());};
-        campoOutro.addEventListener('keydown',e=>{if(e.key==='Enter')confirmar.click();});
+        const outro=document.getElementById('btn-outro-placar'), formOutro=document.getElementById('form-outro-placar'), campoOutroCasa=document.getElementById('campo-outro-casa'), campoOutroFora=document.getElementById('campo-outro-fora'), confirmar=document.getElementById('btn-confirmar-outro');
+        const montarPlacar=(casa,fora)=>{
+            const c=String(casa?.value ?? '').trim(), f=String(fora?.value ?? '').trim();
+            if(c==='' || f==='') return '';
+            return `${c}x${f}`;
+        };
+        outro.onclick=()=>{formOutro.hidden=!formOutro.hidden;if(!formOutro.hidden)campoOutroCasa.focus();};
+        confirmar.onclick=()=>{this.registrarRapido(montarPlacar(campoOutroCasa,campoOutroFora));};
+        [campoOutroCasa,campoOutroFora].forEach(el=>el.addEventListener('keydown',e=>{if(e.key==='Enter')confirmar.click();}));
 
         const btnOutroHorario=document.getElementById('btn-outro-horario');
         const formOutroHorario=document.getElementById('form-outro-horario');
         const campoOutroHorario=document.getElementById('campo-outro-horario');
-        const campoOutroResultado=document.getElementById('campo-outro-resultado');
+        const campoOutroHorarioCasa=document.getElementById('campo-outro-horario-casa');
+        const campoOutroHorarioFora=document.getElementById('campo-outro-horario-fora');
         const confirmarOutroHorario=document.getElementById('btn-confirmar-outro-horario');
         btnOutroHorario.onclick=()=>{
             formOutroHorario.hidden=!formOutroHorario.hidden;
             if(!formOutroHorario.hidden){
-                const atual=typeof RelogioPartidas!=='undefined'?RelogioPartidas.partidaAnterior():null;
-                if(atual) campoOutroHorario.value=atual.horario;
-                campoOutroResultado.focus();
+                // Não preenche automaticamente o horário: assim um horário vazio
+                // escolhido pelo usuário não é confundido com o último resultado.
+                campoOutroHorario.focus();
             }
         };
-        confirmarOutroHorario.onclick=()=>this.registrarOutroHorario(campoOutroHorario.value, campoOutroResultado.value.trim());
-        [campoOutroHorario,campoOutroResultado].forEach(el=>el.addEventListener('keydown',e=>{if(e.key==='Enter')confirmarOutroHorario.click();}));
+        confirmarOutroHorario.onclick=()=>this.registrarOutroHorario(campoOutroHorario.value, montarPlacar(campoOutroHorarioCasa,campoOutroHorarioFora));
+        [campoOutroHorario,campoOutroHorarioCasa,campoOutroHorarioFora].forEach(el=>el.addEventListener('keydown',e=>{if(e.key==='Enter')confirmarOutroHorario.click();}));
         document.getElementById('btn-pausar').onclick=()=>{Historico.pausar();this.atualizar();};
         document.getElementById('btn-limpar').onclick=()=>{if(confirm('Limpar toda a sessão atual?')){Historico.limpar();this.atualizar();}};
         document.getElementById('btn-salvar').onclick=()=>{ const blob=new Blob([JSON.stringify(Historico.obterDadosBrutos(),null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='esportes-virtuais-sessao.json'; a.click(); URL.revokeObjectURL(a.href); };
@@ -89,8 +95,12 @@ const Interface = {
             alert('Placar inválido. Use o formato 2x1.');
             return;
         }
-        const campo=document.getElementById('campo-outro-placar');
-        if(campo){campo.value='';campo.hidden=true;document.getElementById('btn-confirmar-outro').hidden=true;}
+        const formOutro=document.getElementById('form-outro-placar');
+        const casaOutro=document.getElementById('campo-outro-casa');
+        const foraOutro=document.getElementById('campo-outro-fora');
+        if(formOutro){formOutro.hidden=true;}
+        if(casaOutro)casaOutro.value='';
+        if(foraOutro)foraOutro.value='';
         if(typeof Sincronizacao!=='undefined') Sincronizacao.sincronizarAgora();
         this.atualizar();
     },
@@ -121,7 +131,8 @@ const Interface = {
         }
         if(!r){alert('Resultado inválido. Use o formato 2x1.');return;}
         document.getElementById('campo-outro-horario').value='';
-        document.getElementById('campo-outro-resultado').value='';
+        document.getElementById('campo-outro-horario-casa').value='';
+        document.getElementById('campo-outro-horario-fora').value='';
         document.getElementById('form-outro-horario').hidden=true;
         if(typeof Sincronizacao!=='undefined') Sincronizacao.sincronizarAgora();
         this.atualizar();
@@ -160,6 +171,7 @@ const Interface = {
         container.querySelectorAll('.btn-placar').forEach(btn => btn.disabled = !podeRegistrar);
         if (outro) outro.disabled = !podeRegistrar;
         if (confirmar) confirmar.disabled = !podeRegistrar;
+        ['campo-outro-casa','campo-outro-fora'].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=!podeRegistrar;});
         if (status) {
             const semDados=Historico.estaSemDados(partidaResultado);
             const fmt = (s) => `${Math.floor(Math.max(0,s)/60)}:${String(Math.max(0,s)%60).padStart(2,'0')}`;
@@ -249,9 +261,8 @@ const Interface = {
 .status-horario-entrada{margin-top:2px;font-size:12px;font-weight:bold;color:#526173;min-height:18px}
 .btn-placar{padding:6px 4px!important;min-height:34px!important;height:34px!important;font-size:14px!important;line-height:1!important;touch-action:manipulation!important;-webkit-tap-highlight-color:transparent!important}
 .btn-placar:disabled{opacity:.45;cursor:not-allowed;filter:grayscale(.4)}
-.entrada-resultados .resultado-personalizado{margin-top:2px}
-.resultado-outro-horario{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.form-outro-horario{display:flex;align-items:center;gap:6px;flex:1;min-width:260px}.form-outro-horario input{height:34px;border:1px solid #c5ccd5;padding:6px 8px;font-size:14px;border-radius:3px}.form-outro-horario input[type=time]{width:105px;flex:0 0 105px}.form-outro-horario input[type=text]{flex:1}.resultado-outro-horario button{white-space:nowrap}
-@media(max-width:700px){.resultado-outro-horario{align-items:stretch}.form-outro-horario{width:100%;min-width:0;display:grid;grid-template-columns:100px 1fr;gap:6px}.form-outro-horario input[type=time]{width:100%;min-width:0}.form-outro-horario input{height:40px;font-size:16px}.form-outro-horario button{grid-column:1 / -1;min-height:40px}}
+.entrada-resultados .resultado-personalizado{margin-top:2px}.placar-separado{display:flex;align-items:center;gap:6px;min-width:0}.placar-separado input{width:92px;max-width:100%;height:38px;border:1px solid #c5ccd5;padding:6px 8px;font-size:16px;border-radius:5px;text-align:center}.separador-x{font-size:20px;font-weight:bold;color:#526173}.resultado-outro-horario{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.form-outro-horario{display:flex;align-items:center;gap:6px;flex:1;min-width:360px}.form-outro-horario input{height:38px;border:1px solid #c5ccd5;padding:6px 8px;font-size:14px;border-radius:5px}.form-outro-horario input[type=time]{width:105px;flex:0 0 105px}.resultado-outro-horario button{white-space:nowrap}
+@media(max-width:700px){.resultado-personalizado{flex-wrap:wrap}.placar-separado{width:100%;display:grid;grid-template-columns:1fr 24px 1fr}.placar-separado input{width:100%;height:44px;font-size:18px}.separador-x{text-align:center}.resultado-outro-horario{align-items:stretch}.form-outro-horario{width:100%;min-width:0;display:grid;grid-template-columns:1fr;gap:7px}.form-outro-horario input[type=time]{width:100%;min-width:0;height:44px;font-size:16px}.placar-outro-horario{display:grid;grid-template-columns:1fr 24px 1fr}.form-outro-horario button{min-height:44px}}
 @media(max-width:700px){.botoes-resultados{grid-template-columns:repeat(5,minmax(44px,1fr));gap:5px}.btn-placar{min-height:34px!important;height:34px!important;font-size:14px!important;padding:5px 3px!important}.status-horario-entrada{font-size:12px}}
 @media(max-width:700px){body{font-size:15px}.botoes-resultados{grid-template-columns:repeat(5,1fr)}.topo,.mercados,.probabilidade .previsao{grid-template-columns:1fr}.grade-mercados{column-count:1}.entrada{flex-wrap:wrap}.entrada input{flex-basis:100%}.lista{grid-template-columns:1fr}.item-mercado{font-size:16px}.item-mercado>div:first-child{font-size:17px}}
 /* ===== ADAPTAÇÃO MOBILE/PWA — somente visual ===== */
