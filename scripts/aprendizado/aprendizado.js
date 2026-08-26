@@ -1,16 +1,27 @@
 "use strict";
 /* Camada de aprendizado: observa previsões passadas sem alterar o motor de padrões. */
 const Aprendizado={
-  _cache:{assinatura:null,registros:[],indice:new Map()},
+  _cache:{assinatura:null,registros:[],indice:new Map(),processando:false,pronto:false},
+  MAX_AMOSTRA_HISTORICA:180,
   _assinatura(r){return (r||[]).map(x=>`${x.id||''}:${x.placar||''}`).join('|');},
   _faixaPct(p){return `${Math.floor((Number(p)||0)/10)*10}-${Math.floor((Number(p)||0)/10)*10+9}`;},
   _faixaOc(n){n=Number(n)||0; return n<=1?'1':n<=3?'2-3':n<=7?'4-7':n<=15?'8-15':'16+';},
   _faixaTam(n){n=Number(n)||0; return n<=1?'1':n<=3?'2-3':n<=6?'4-6':'7+';},
   _chave(k,m){return [k,this._faixaPct(m?.palpite?.percentual),this._faixaOc(m?.padrao?.ocorrencias?.length),this._faixaTam(m?.padrao?.tamanho)].join('|');},
   _construir(r){
-    const assinatura=this._assinatura(r); if(this._cache.assinatura===assinatura)return;
-    const registros=[],indice=new Map(), chaves=['exato','gols','r12','bm','ou05','ou15','ou25','ou35'];
-    for(let i=1;i<r.length;i++){
+    const assinatura=this._assinatura(r);
+    if(this._cache.assinatura===assinatura && this._cache.pronto)return;
+    if(this._cache.processando)return;
+    this._cache={assinatura,registros:[],indice:new Map(),processando:true,pronto:false};
+
+    const inicio=Math.max(1,(r||[]).length-this.MAX_AMOSTRA_HISTORICA);
+    const fim=(r||[]).length;
+    const chaves=['exato','gols','r12','bm','ou05','ou15','ou25','ou35','over35'];
+    const registros=[],indice=new Map();
+
+    // Mantemos a aprendizagem temporal, mas limitada às partidas mais recentes.
+    // Isso evita bloquear a abertura do aplicativo quando o histórico passa de centenas de resultados.
+    for(let i=inicio;i<fim;i++){
       const avaliacao=GreenRed.avaliarPrevisao(r,i); if(!avaliacao)continue;
       const mercados=Previsoes.gerar(r.slice(0,i)).mercados;
       for(const k of chaves){
@@ -19,8 +30,9 @@ const Aprendizado={
         registros.push(reg); if(!indice.has(reg.chave))indice.set(reg.chave,[]); indice.get(reg.chave).push(reg);
       }
     }
-    this._cache={assinatura,registros,indice};
+    this._cache={assinatura,registros,indice,processando:false,pronto:true};
   },
+
   avaliar(resultados,k,m){
     if(!m?.ativo||!m?.palpite)return {disponivel:false}; this._construir(resultados);
     const chave=this._chave(k,m); const grupo=this._cache.indice.get(chave)||[];
@@ -29,6 +41,23 @@ const Aprendizado={
     return {disponivel:true,amostra:grupo.length,acertos,erros,taxa,chave};
   },
   resumo(resultados,k,m){
+    const assinatura=this._assinatura(resultados||[]);
+    if(this._cache.assinatura!==assinatura || !this._cache.pronto){
+      if(!this._cache.processando){
+        this._cache={assinatura,registros:[],indice:new Map(),processando:true,pronto:false};
+        setTimeout(()=>{
+          try{
+            this._cache.processando=false;
+            this._construir(resultados||[]);
+            if(typeof Interface!=='undefined' && Interface.atualizar) Interface.atualizar();
+          }catch(e){
+            console.error('Erro ao atualizar aprendizado:',e);
+            this._cache.processando=false;
+          }
+        },0);
+      }
+      return {a:{disponivel:false,amostra:0,acertos:0,erros:0,taxa:0},texto:'🧠 Aprendizado sendo atualizado…',classe:'muted',sugestao:'⏳ Aguarde a atualização do histórico',classeSugestao:'muted'};
+    }
     const a=this.avaliar(resultados,k,m);
     if(!a.disponivel || a.amostra<5){
       const n=a?.amostra||0;
