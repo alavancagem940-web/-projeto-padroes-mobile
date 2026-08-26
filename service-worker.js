@@ -1,4 +1,4 @@
-const CACHE = "esportes-virtuais-mobile-v3";
+const CACHE = "esportes-virtuais-mobile-v12-historico-compartilhado";
 
 const ASSETS = [
   "./",
@@ -6,6 +6,7 @@ const ASSETS = [
   "./manifest.json",
   "./scripts/backup/backup.js",
   "./scripts/dados/armazenamento.js",
+  "./scripts/dados/sincronizacao.js",
   "./scripts/historico/historico.js",
   "./scripts/analise/calculos.js",
   "./scripts/mercados/resultado-1x2.js",
@@ -14,6 +15,7 @@ const ASSETS = [
   "./scripts/mercados/over-under-1.5.js",
   "./scripts/mercados/over-under-2.5.js",
   "./scripts/mercados/over-under-3.5.js",
+  "./scripts/mercados/over-3.5.js",
   "./scripts/mercados/placar-exato.js",
   "./scripts/mercados/gols-exatos.js",
   "./scripts/analise/padroes.js",
