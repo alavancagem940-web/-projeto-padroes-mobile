@@ -20,6 +20,12 @@ const Sincronizacao = {
   _rodando: false,
   _ultimoHash: "",
   _listeners: new Set(),
+  // Ao abrir o app, a sessão visual começa vazia. Resultados que já estavam
+  // no banco continuam guardados, mas não entram automaticamente como se
+  // tivessem acabado de acontecer nesta nova sessão.
+  _chavesConhecidasAoAbrir: new Set(),
+  _chavesEntreguesSessao: new Set(),
+  _sessaoInicializada: false,
 
   configurada() {
     return /^https:\/\/[^\s]+$/.test(String(this.DATABASE_URL || "").trim());
@@ -89,6 +95,10 @@ const Sincronizacao = {
     return JSON.stringify(this._listaUnica(lista).map(r => [this._chave(r), r.placar]));
   },
 
+  _somenteNovosDaSessao(lista) {
+    return this._listaUnica(lista).filter(r => !this._chavesConhecidasAoAbrir.has(this._chave(r)));
+  },
+
   async _get() {
     if (!this.configurada()) return [];
     const res = await fetch(this._url(), { cache: "no-store" });
@@ -128,7 +138,9 @@ const Sincronizacao = {
     try {
       // 1) Lê o que já existe no histórico compartilhado.
       const remotoAntes = this._listaUnica(await this._get());
-      const locais = this._listaUnica(this.extrairLocais());
+      // Não reaproveita resultados locais antigos que existiam antes da abertura.
+      // Apenas registros feitos nesta sessão são candidatos a entrar no fluxo atual.
+      const locais = this._somenteNovosDaSessao(this.extrairLocais());
       const mapaRemoto = new Map(remotoAntes.map(r => [this._chave(r), r]));
 
       // 2) Envia somente partidas locais que ainda não existem no Firebase.
@@ -144,13 +156,17 @@ const Sincronizacao = {
       // 3) Recarrega após possíveis envios para distribuir o estado comum
       // a todos os dispositivos.
       const remotoDepois = this._listaUnica(await this._get());
-      const combinado = this._listaUnica([...remotoDepois, ...locais]);
-      const hash = this._hash(combinado);
+      const novosRemotos = this._somenteNovosDaSessao(remotoDepois);
+      const combinado = this._listaUnica([...novosRemotos, ...locais]);
+      const novosParaInterface = combinado.filter(r => {
+        const chave = this._chave(r);
+        return chave && !this._chavesEntreguesSessao.has(chave);
+      });
 
-      if (hash !== this._ultimoHash) {
-        this._ultimoHash = hash;
+      if (novosParaInterface.length) {
+        for (const r of novosParaInterface) this._chavesEntreguesSessao.add(this._chave(r));
         for (const fn of this._listeners) {
-          try { fn(combinado); } catch (e) { console.error(e); }
+          try { fn(novosParaInterface); } catch (e) { console.error(e); }
         }
       }
     } catch (e) {
@@ -167,7 +183,22 @@ const Sincronizacao = {
 
   async iniciar() {
     if (!this.configurada() || this._timer) return false;
-    await this.sincronizarAgora();
+    try {
+      // Marca o estado já existente como histórico anterior à abertura.
+      // Isso impede que o último placar remoto (ou um placar antigo) inicie
+      // automaticamente a nova sessão visual.
+      const existentes = this._listaUnica(await this._get());
+      const locaisExistentes = this._listaUnica(this.extrairLocais());
+      this._chavesConhecidasAoAbrir = new Set([
+        ...existentes.map(r => this._chave(r)),
+        ...locaisExistentes.map(r => this._chave(r))
+      ]);
+      this._chavesEntreguesSessao = new Set();
+      this._ultimoHash = this._hash(existentes);
+      this._sessaoInicializada = true;
+    } catch (e) {
+      console.warn("Não foi possível preparar a sessão compartilhada:", e);
+    }
     this._timer = setInterval(() => this.sincronizarAgora(), this.INTERVALO_MS);
     return true;
   },
