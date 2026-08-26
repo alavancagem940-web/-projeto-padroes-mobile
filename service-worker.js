@@ -1,4 +1,4 @@
-const CACHE = "esportes-virtuais-mobile-v12-historico-compartilhado";
+const CACHE = "esportes-virtuais-mobile-v13-outro-horario-corrigido";
 
 const ASSETS = [
   "./",
