@@ -3,14 +3,13 @@
 /*
  * HISTÓRICO ATUAL COMPARTILHADO — FIREBASE REALTIME DATABASE
  *
- * O backup continua LOCAL e serve somente como base de aprendizado.
- * Apenas resultados com fonte "ao-vivo" são compartilhados.
+ * REGRA DE SEGURANÇA DE ENVIO:
+ * - O sincronizador NUNCA varre o localStorage para decidir o que enviar.
+ * - Somente um resultado passado explicitamente para publicarResultado(r)
+ *   pode ser gravado no Firebase.
  *
- * Esta versão evita sobrescrever a lista inteira do Firebase: cada partida
- * fica em seu próprio nó, identificado por data + horário.
- *
- * Banco configurado:
- * https://projeto-padroes-default-rtdb.firebaseio.com
+ * Isso impede que placares antigos/locais reapareçam quando o usuário usa
+ * "Resultado de outro horário".
  */
 const Sincronizacao = {
   DATABASE_URL: "https://projeto-padroes-default-rtdb.firebaseio.com",
@@ -18,10 +17,10 @@ const Sincronizacao = {
   INTERVALO_MS: 2000,
   _timer: null,
   _rodando: false,
-  _ultimoHash: "",
   _listeners: new Set(),
   _chavesConhecidasAoAbrir: new Set(),
   _chavesEntreguesSessao: new Set(),
+  _filaEnvio: new Map(),
   _inicioSessaoMs: 0,
   _baselineRemotoPronto: false,
 
@@ -42,7 +41,6 @@ const Sincronizacao = {
     return t?.data && t?.horario ? `${t.data}|${t.horario}` : null;
   },
 
-  // Chave segura para o Firebase. Ex.: 2026-08-26|04:24 -> 2026-08-26_04-24
   _idFirebase(r) {
     const chave = this._chave(r);
     if (!chave) return null;
@@ -57,7 +55,10 @@ const Sincronizacao = {
 
   _normalizar(r) {
     if (!r?.placar || !r?._temporal?.data || !r?._temporal?.horario) return null;
-    const [casa, fora] = String(r.placar).split("x").map(Number);
+    const m = String(r.placar).trim().toLowerCase().match(/^(\d+)x(\d+)$/);
+    if (!m) return null;
+    const casa = Number(m[1]);
+    const fora = Number(m[2]);
     if (!Number.isFinite(casa) || !Number.isFinite(fora)) return null;
 
     return {
@@ -66,10 +67,7 @@ const Sincronizacao = {
       golsCasa: casa,
       golsFora: fora,
       totalGols: casa + fora,
-      // Nunca inventa uma data ao ler um registro antigo. Se um registro remoto
-      // antigo não tiver timestamp, ele deve ser tratado como histórico anterior,
-      // não como algo criado agora.
-      data: (typeof r.data === "string" && r.data) ? r.data : null,
+      data: (typeof r.data === "string" && r.data) ? r.data : new Date().toISOString(),
       _temporal: {
         data: r._temporal.data,
         horario: r._temporal.horario,
@@ -92,20 +90,9 @@ const Sincronizacao = {
     return [...mapa.values()].sort((a, b) => this._chave(a).localeCompare(this._chave(b)));
   },
 
-  _hash(lista) {
-    return JSON.stringify(this._listaUnica(lista).map(r => [this._chave(r), r.placar]));
-  },
-
   _foiCriadoNestaSessao(r) {
     const ms = Date.parse(r?.data || "");
     return Number.isFinite(ms) && this._inicioSessaoMs > 0 && ms >= this._inicioSessaoMs;
-  },
-
-  _somenteNovosDaSessao(lista) {
-    return this._listaUnica(lista).filter(r => {
-      const chave = this._chave(r);
-      return chave && !this._chavesConhecidasAoAbrir.has(chave) && this._foiCriadoNestaSessao(r);
-    });
   },
 
   async _get() {
@@ -117,8 +104,6 @@ const Sincronizacao = {
     return Array.isArray(dados) ? dados : Object.values(dados);
   },
 
-  // Grava apenas UMA partida. Assim um usuário não apaga resultados enviados
-  // simultaneamente por outros usuários.
   async _putRegistro(r) {
     const url = this._urlRegistro(r);
     if (!url) return false;
@@ -131,27 +116,33 @@ const Sincronizacao = {
     return true;
   },
 
-  /* Extrai somente resultados ao-vivo do armazenamento local. */
-  extrairLocais() {
-    const dados = typeof Armazenamento !== "undefined" ? Armazenamento.obterDados() : [];
-    return (dados || [])
-      .filter(x => x && typeof x === "object" && x.fonte === "ao-vivo")
-      .map(x => this._normalizar(x))
-      .filter(Boolean);
+  /*
+   * ÚNICA porta de saída para novos resultados.
+   * Recebe o objeto que acabou de ser criado pelo Historico.adicionar().
+   * Nenhum outro placar do navegador é incluído automaticamente.
+   */
+  async publicarResultado(resultado) {
+    const r = this._normalizar(resultado);
+    const chave = this._chave(r);
+    if (!r || !chave) return false;
+
+    this._filaEnvio.set(chave, r);
+    // Ele já foi inserido localmente pela Interface. Evita reimportá-lo quando
+    // o Firebase devolver o mesmo registro no próximo GET.
+    this._chavesEntreguesSessao.add(chave);
+    await this.sincronizarAgora();
+    return true;
   },
 
   async sincronizarAgora() {
-    if (!this.configurada() || this._rodando) return;
+    if (!this.configurada() || this._rodando) return false;
     this._rodando = true;
 
     try {
-      // 1) Lê o que já existe no histórico compartilhado.
       const remotoAntes = this._listaUnica(await this._get());
 
-      // Se a primeira leitura do Firebase falhou na abertura, a primeira leitura
-      // que funcionar depois vira a linha de base. Registros realmente criados
-      // depois da abertura continuam elegíveis; registros antigos não entram como
-      // placares fantasmas na sessão atual.
+      // Se a primeira leitura na abertura falhou, tudo que for antigo vira
+      // baseline assim que a conexão voltar. Isso não alimenta a fila de envio.
       if (!this._baselineRemotoPronto) {
         for (const r of remotoAntes) {
           if (!this._foiCriadoNestaSessao(r)) {
@@ -162,37 +153,41 @@ const Sincronizacao = {
         this._baselineRemotoPronto = true;
       }
 
-      const locais = this._somenteNovosDaSessao(this.extrairLocais());
       const mapaRemoto = new Map(remotoAntes.map(r => [this._chave(r), r]));
 
-      // 2) Envia somente partidas locais que ainda não existem no Firebase.
-      // Cada uma é gravada em seu próprio nó, sem substituir a coleção inteira.
-      for (const local of locais) {
-        const chave = this._chave(local);
+      // IMPORTANTE: percorre SOMENTE a fila explícita. Nunca localStorage.
+      for (const [chave, local] of [...this._filaEnvio.entries()]) {
         if (!mapaRemoto.has(chave)) {
           await this._putRegistro(local);
           mapaRemoto.set(chave, local);
         }
+        // Existindo ou tendo acabado de ser enviado, não precisa ficar na fila.
+        this._filaEnvio.delete(chave);
       }
 
-      // 3) Recarrega após possíveis envios para distribuir o estado comum
-      // a todos os dispositivos.
       const remotoDepois = this._listaUnica(await this._get());
-      const novosRemotos = this._somenteNovosDaSessao(remotoDepois);
-      const combinado = this._listaUnica([...novosRemotos, ...locais]);
-      const novosParaInterface = combinado.filter(r => {
+      const novosParaInterface = remotoDepois.filter(r => {
         const chave = this._chave(r);
-        return chave && !this._chavesEntreguesSessao.has(chave);
+        if (!chave) return false;
+        if (this._chavesConhecidasAoAbrir.has(chave)) return false;
+        if (this._chavesEntreguesSessao.has(chave)) return false;
+        // Se houver timestamp, só aceita registros criados após a abertura.
+        // Registros sem timestamp não são tratados como novos.
+        return this._foiCriadoNestaSessao(r);
       });
 
       if (novosParaInterface.length) {
-        for (const r of novosParaInterface) this._chavesEntreguesSessao.add(this._chave(r));
+        for (const r of novosParaInterface) {
+          this._chavesEntreguesSessao.add(this._chave(r));
+        }
         for (const fn of this._listeners) {
           try { fn(novosParaInterface); } catch (e) { console.error(e); }
         }
       }
+      return true;
     } catch (e) {
       console.warn("Sincronização compartilhada indisponível:", e);
+      return false;
     } finally {
       this._rodando = false;
     }
@@ -206,26 +201,18 @@ const Sincronizacao = {
   async iniciar() {
     if (!this.configurada() || this._timer) return false;
 
-    // A sessão nasce ANTES de qualquer acesso à rede. Assim, mesmo que o
-    // Firebase falhe por alguns segundos na abertura, resultados locais antigos
-    // nunca podem ser confundidos com resultados recém-registrados.
     this._inicioSessaoMs = Date.now();
-    const locaisExistentes = this._listaUnica(this.extrairLocais());
-    this._chavesConhecidasAoAbrir = new Set(
-      locaisExistentes.map(r => this._chave(r)).filter(Boolean)
-    );
+    this._chavesConhecidasAoAbrir = new Set();
     this._chavesEntreguesSessao = new Set();
+    this._filaEnvio = new Map();
     this._baselineRemotoPronto = false;
 
     try {
-      // Tudo que já existia no Firebase no instante da abertura vira apenas
-      // linha de base e não entra na nova sessão visual.
       const existentes = this._listaUnica(await this._get());
       for (const r of existentes) {
         const chave = this._chave(r);
         if (chave) this._chavesConhecidasAoAbrir.add(chave);
       }
-      this._ultimoHash = this._hash(existentes);
       this._baselineRemotoPronto = true;
     } catch (e) {
       console.warn("Não foi possível preparar o histórico da sessão:", e);
