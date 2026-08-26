@@ -22,6 +22,8 @@ const Sincronizacao = {
   _listeners: new Set(),
   _chavesConhecidasAoAbrir: new Set(),
   _chavesEntreguesSessao: new Set(),
+  _inicioSessaoMs: 0,
+  _baselineRemotoPronto: false,
 
   configurada() {
     return /^https:\/\/[^\s]+$/.test(String(this.DATABASE_URL || "").trim());
@@ -64,7 +66,10 @@ const Sincronizacao = {
       golsCasa: casa,
       golsFora: fora,
       totalGols: casa + fora,
-      data: r.data || new Date().toISOString(),
+      // Nunca inventa uma data ao ler um registro antigo. Se um registro remoto
+      // antigo não tiver timestamp, ele deve ser tratado como histórico anterior,
+      // não como algo criado agora.
+      data: (typeof r.data === "string" && r.data) ? r.data : null,
       _temporal: {
         data: r._temporal.data,
         horario: r._temporal.horario,
@@ -91,8 +96,16 @@ const Sincronizacao = {
     return JSON.stringify(this._listaUnica(lista).map(r => [this._chave(r), r.placar]));
   },
 
+  _foiCriadoNestaSessao(r) {
+    const ms = Date.parse(r?.data || "");
+    return Number.isFinite(ms) && this._inicioSessaoMs > 0 && ms >= this._inicioSessaoMs;
+  },
+
   _somenteNovosDaSessao(lista) {
-    return this._listaUnica(lista).filter(r => !this._chavesConhecidasAoAbrir.has(this._chave(r)));
+    return this._listaUnica(lista).filter(r => {
+      const chave = this._chave(r);
+      return chave && !this._chavesConhecidasAoAbrir.has(chave) && this._foiCriadoNestaSessao(r);
+    });
   },
 
   async _get() {
@@ -134,6 +147,21 @@ const Sincronizacao = {
     try {
       // 1) Lê o que já existe no histórico compartilhado.
       const remotoAntes = this._listaUnica(await this._get());
+
+      // Se a primeira leitura do Firebase falhou na abertura, a primeira leitura
+      // que funcionar depois vira a linha de base. Registros realmente criados
+      // depois da abertura continuam elegíveis; registros antigos não entram como
+      // placares fantasmas na sessão atual.
+      if (!this._baselineRemotoPronto) {
+        for (const r of remotoAntes) {
+          if (!this._foiCriadoNestaSessao(r)) {
+            const chave = this._chave(r);
+            if (chave) this._chavesConhecidasAoAbrir.add(chave);
+          }
+        }
+        this._baselineRemotoPronto = true;
+      }
+
       const locais = this._somenteNovosDaSessao(this.extrairLocais());
       const mapaRemoto = new Map(remotoAntes.map(r => [this._chave(r), r]));
 
@@ -177,20 +205,32 @@ const Sincronizacao = {
 
   async iniciar() {
     if (!this.configurada() || this._timer) return false;
+
+    // A sessão nasce ANTES de qualquer acesso à rede. Assim, mesmo que o
+    // Firebase falhe por alguns segundos na abertura, resultados locais antigos
+    // nunca podem ser confundidos com resultados recém-registrados.
+    this._inicioSessaoMs = Date.now();
+    const locaisExistentes = this._listaUnica(this.extrairLocais());
+    this._chavesConhecidasAoAbrir = new Set(
+      locaisExistentes.map(r => this._chave(r)).filter(Boolean)
+    );
+    this._chavesEntreguesSessao = new Set();
+    this._baselineRemotoPronto = false;
+
     try {
-      // Tudo que já existia antes da abertura é histórico antigo de horário.
-      // Mantém os dados no Firebase, mas não os injeta novamente na sessão atual.
+      // Tudo que já existia no Firebase no instante da abertura vira apenas
+      // linha de base e não entra na nova sessão visual.
       const existentes = this._listaUnica(await this._get());
-      const locaisExistentes = this._listaUnica(this.extrairLocais());
-      this._chavesConhecidasAoAbrir = new Set([
-        ...existentes.map(r => this._chave(r)),
-        ...locaisExistentes.map(r => this._chave(r))
-      ]);
-      this._chavesEntreguesSessao = new Set();
+      for (const r of existentes) {
+        const chave = this._chave(r);
+        if (chave) this._chavesConhecidasAoAbrir.add(chave);
+      }
       this._ultimoHash = this._hash(existentes);
+      this._baselineRemotoPronto = true;
     } catch (e) {
       console.warn("Não foi possível preparar o histórico da sessão:", e);
     }
+
     this._timer = setInterval(() => this.sincronizarAgora(), this.INTERVALO_MS);
     return true;
   },
