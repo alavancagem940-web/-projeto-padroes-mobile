@@ -20,12 +20,8 @@ const Sincronizacao = {
   _rodando: false,
   _ultimoHash: "",
   _listeners: new Set(),
-  // Ao abrir o app, a sessão visual começa vazia. Resultados que já estavam
-  // no banco continuam guardados, mas não entram automaticamente como se
-  // tivessem acabado de acontecer nesta nova sessão.
   _chavesConhecidasAoAbrir: new Set(),
   _chavesEntreguesSessao: new Set(),
-  _sessaoInicializada: false,
 
   configurada() {
     return /^https:\/\/[^\s]+$/.test(String(this.DATABASE_URL || "").trim());
@@ -138,8 +134,6 @@ const Sincronizacao = {
     try {
       // 1) Lê o que já existe no histórico compartilhado.
       const remotoAntes = this._listaUnica(await this._get());
-      // Não reaproveita resultados locais antigos que existiam antes da abertura.
-      // Apenas registros feitos nesta sessão são candidatos a entrar no fluxo atual.
       const locais = this._somenteNovosDaSessao(this.extrairLocais());
       const mapaRemoto = new Map(remotoAntes.map(r => [this._chave(r), r]));
 
@@ -184,9 +178,8 @@ const Sincronizacao = {
   async iniciar() {
     if (!this.configurada() || this._timer) return false;
     try {
-      // Marca o estado já existente como histórico anterior à abertura.
-      // Isso impede que o último placar remoto (ou um placar antigo) inicie
-      // automaticamente a nova sessão visual.
+      // Tudo que já existia antes da abertura é histórico antigo de horário.
+      // Mantém os dados no Firebase, mas não os injeta novamente na sessão atual.
       const existentes = this._listaUnica(await this._get());
       const locaisExistentes = this._listaUnica(this.extrairLocais());
       this._chavesConhecidasAoAbrir = new Set([
@@ -195,9 +188,8 @@ const Sincronizacao = {
       ]);
       this._chavesEntreguesSessao = new Set();
       this._ultimoHash = this._hash(existentes);
-      this._sessaoInicializada = true;
     } catch (e) {
-      console.warn("Não foi possível preparar a sessão compartilhada:", e);
+      console.warn("Não foi possível preparar o histórico da sessão:", e);
     }
     this._timer = setInterval(() => this.sincronizarAgora(), this.INTERVALO_MS);
     return true;
