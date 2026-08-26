@@ -98,7 +98,7 @@ const Interface = {
         }
         const campo=document.getElementById('campo-outro-placar');
         if(campo){campo.value='';campo.hidden=true;document.getElementById('btn-confirmar-outro').hidden=true;}
-        if(typeof Sincronizacao!=='undefined') Sincronizacao.sincronizarAgora();
+        if(typeof Sincronizacao!=='undefined'){ if(typeof Sincronizacao.publicarResultado==='function') Sincronizacao.publicarResultado(r); else Sincronizacao.sincronizarAgora(); }
         this.atualizar();
     },
     registrarOutroHorario(horario, placar){
@@ -131,7 +131,7 @@ const Interface = {
         document.getElementById('campo-outro-horario-casa').value='';
         document.getElementById('campo-outro-horario-fora').value='';
         document.getElementById('form-outro-horario').hidden=true;
-        if(typeof Sincronizacao!=='undefined') Sincronizacao.sincronizarAgora();
+        if(typeof Sincronizacao!=='undefined'){ if(typeof Sincronizacao.publicarResultado==='function') Sincronizacao.publicarResultado(r); else Sincronizacao.sincronizarAgora(); }
         this.atualizar();
     },
     atualizarEstadoBotoes() {
