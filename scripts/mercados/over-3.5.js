@@ -1,188 +1,212 @@
 "use strict";
 
 /*
- * OVER 3.5 — motor independente e mais seletivo.
+ * ESPECIALISTA OVER 3.5 — DISTÂNCIA DESDE O ÚLTIMO OVER
  *
- * Objetivo: aumentar a quantidade de chamadas sem transformar o O3.5 em
- * simples complemento do U3.5. O Under 3.5 não é consultado aqui.
+ * Este mercado ignora placar exato e trabalha SOMENTE com a série binária:
+ *   MAIS  = 4 ou mais gols (Over 3.5)
+ *   MENOS = 0 a 3 gols     (Under 3.5)
  *
- * O motor usa duas portas independentes:
- *  1) Ensemble de contexto: último total exato + últimas 2 e 3 faixas;
- *  2) Pressão de gols: os 3 últimos jogos tiveram 4+ gols.
+ * Gatilhos obtidos no teste fora da amostra:
+ *   - exatamente 5 MENOS consecutivos desde o último MAIS;
+ *   - de 10 a 13 MENOS consecutivos desde o último MAIS.
  *
- * O4.5/O5.5 continuam como profundidade, mas MENOS em 4.5/5.5 não derruba
- * o O3.5: 4 gols continuam sendo GREEN no O3.5.
+ * A sequência exata de O/U é usada apenas como confirmação informativa;
+ * ela NÃO dispara entrada sozinha.
  */
 const MercadoOver35 = {
-  nome: 'Over 3.5 (motor independente)',
-  MIN_OCORRENCIAS: 2,
-  LIMIAR_ENSEMBLE: 0.42,
+  nome: "Especialista O3.5",
+  ALVO: "MAIS",
+  METODO: "o35-distancia-desde-ultimo-over-v1",
 
   transformar(r) {
     const g = Number(r?.totalGols);
-    return Number.isFinite(g) && g >= 4 ? 'MAIS' : 'MENOS';
+    return Number.isFinite(g) && g >= 4 ? "MAIS" : "MENOS";
   },
 
   rotulo(v) {
-    return v === 'MAIS' ? 'Mais de 3.5' : 'Menos de 3.5';
+    return v === "MAIS" ? "Mais de 3.5" : "Menos de 3.5";
   },
 
-  _faixa(total) {
-    const g = Number(total);
-    if (!Number.isFinite(g)) return 'NA';
-    if (g === 0) return 'ZERO';
-    if (g <= 2) return 'BAIXO';
-    if (g <= 3) return 'MEDIO';
-    if (g === 4) return 'ALTO';
-    return 'MUITO_ALTO';
+  _ehPlacar(x) {
+    const p = typeof x === "string" ? x : x?.placar;
+    return typeof p === "string" && /^\d+x\d+$/i.test(p.trim());
   },
 
-  _ocorrencias(serie, contexto) {
-    return Padroes.encontrarOcorrencias(serie, contexto);
+  _labelBruto(x) {
+    if (!this._ehPlacar(x)) return null;
+    const p = typeof x === "string" ? x : x.placar;
+    const [a, b] = p.toLowerCase().split("x").map(Number);
+    return a + b >= 4 ? "MAIS" : "MENOS";
   },
 
-  _taxaParaContexto(serie, contexto) {
-    if (!Array.isArray(contexto) || contexto.length < 1) return null;
-    const ocorrencias = this._ocorrencias(serie, contexto);
-    if (ocorrencias.length < this.MIN_OCORRENCIAS) return null;
-    const mais = ocorrencias.filter(x => x.proximo === 'MAIS' || x.proximo === 'ALTO' || x.proximo === 'MUITO_ALTO' || (Number.isFinite(Number(x.proximo)) && Number(x.proximo) >= 4)).length;
-    return {
-      taxa: mais / ocorrencias.length,
-      mais,
-      menos: ocorrencias.length - mais,
-      ocorrencias,
-      tamanho: contexto.length,
-      contexto: [...contexto]
-    };
+  _minutosTemporal(t) {
+    if (!t?.data || !t?.horario) return null;
+    const [h, m] = String(t.horario).split(":").map(Number);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+    const dia = Date.parse(`${t.data}T00:00:00Z`);
+    if (!Number.isFinite(dia)) return null;
+    return Math.floor(dia / 60000) + h * 60 + m;
   },
 
   /*
-   * Ensemble que foi testado no histórico:
-   *  - último total exato: peso 2
-   *  - últimas 2 faixas: peso 3
-   *  - últimas 3 faixas: peso 4
-   *
-   * A ideia é não depender de uma única sequência muito específica.
+   * Série contínua. PAUSAS antigas e intervalos sem registro não quebram mais
+   * o histórico; o tamanho desses intervalos é estudado pela AnaliseTemporal.
    */
-  _ensemble(serie, contextoAtual) {
-    const candidatos = [];
-    const contexto = contextoAtual.map(r => Number(r.totalGols));
-    const serieTotais = serie.map(r => Number(r.totalGols));
-    const serieFaixas = serieTotais.map(g => this._faixa(g));
-    const atualFaixas = contexto.map(g => this._faixa(g));
+  _serieComQuebras(resultados) {
+    const lista = Array.isArray(resultados) ? resultados : [];
+    return lista.map(r => this.transformar(r));
+  },
 
-    if (contexto.length >= 1) {
-      const x = this._taxaParaContexto(serieTotais, [contexto[contexto.length - 1]]);
-      if (x) candidatos.push({ ...x, peso: 2, tipo: 'último total' });
+  _corridaAtual(serie) {
+    let corrida = 0;
+    for (let i = serie.length - 1; i >= 0; i--) {
+      const v = serie[i];
+      if (v === "MAIS") break;
+      if (v === "MENOS") corrida++;
     }
-    if (contexto.length >= 2) {
-      const x = this._taxaParaContexto(serieFaixas, atualFaixas.slice(-2));
-      if (x) candidatos.push({ ...x, peso: 3, tipo: 'últimas 2 faixas' });
-    }
-    if (contexto.length >= 3) {
-      const x = this._taxaParaContexto(serieFaixas, atualFaixas.slice(-3));
-      if (x) candidatos.push({ ...x, peso: 4, tipo: 'últimas 3 faixas' });
-    }
+    return corrida;
+  },
 
-    if (!candidatos.length) return null;
+  _faixa(corrida) {
+    if (corrida === 5) return "5";
+    if (corrida >= 10 && corrida <= 13) return "10-13";
+    return null;
+  },
 
-    const pesoTotal = candidatos.reduce((s, x) => s + x.peso, 0);
-    const taxa = candidatos.reduce((s, x) => s + x.taxa * x.peso, 0) / pesoTotal;
-
-    return {
-      taxa,
-      candidatos,
-      melhor: [...candidatos].sort((a, b) =>
-        b.taxa - a.taxa || b.ocorrencias.length - a.ocorrencias.length || b.tamanho - a.tamanho
-      )[0]
+  _estatisticasPorFaixa(serie) {
+    const faixas = {
+      "5": { total: 0, over: 0 },
+      "10-13": { total: 0, over: 0 }
     };
+    let corrida = 0;
+
+    for (const valor of serie) {
+      const faixa = this._faixa(corrida);
+      if (faixa) {
+        faixas[faixa].total++;
+        if (valor === "MAIS") faixas[faixa].over++;
+      }
+
+      corrida = valor === "MAIS" ? 0 : corrida + 1;
+    }
+
+    for (const x of Object.values(faixas)) {
+      x.taxa = x.total ? x.over / x.total : 0;
+    }
+    return faixas;
   },
 
-  _pressaoAlta(contextoAtual) {
-    if (!Array.isArray(contextoAtual) || contextoAtual.length < 3) return false;
-    const ultimos = contextoAtual.slice(-3).map(r => Number(r.totalGols));
-    return ultimos.length === 3 && ultimos.every(g => Number.isFinite(g) && g >= 4);
+  _confirmacaoSequencia(serie, tamanho = 3) {
+    const limpa = [];
+    for (let i = serie.length - 1; i >= 0 && limpa.length < tamanho; i--) {
+      limpa.unshift(serie[i]);
+    }
+    if (limpa.length < 2) return { contexto: limpa, total: 0, over: 0, taxa: 0 };
+
+    let total = 0, over = 0;
+    for (let i = 0; i + limpa.length < serie.length; i++) {
+      let ok = true;
+      for (let j = 0; j < limpa.length; j++) {
+        if (serie[i + j] !== limpa[j]) { ok = false; break; }
+      }
+      if (!ok) continue;
+      const prox = serie[i + limpa.length];
+      total++;
+      if (prox === "MAIS") over++;
+    }
+    return { contexto: limpa, total, over, taxa: total ? over / total : 0 };
   },
 
-  _auxiliares(resultados, contextoAtual) {
-    const gols = MercadoGolsExatos.analisar(resultados, contextoAtual);
-    const ocultos = gols.indicadoresOcultos || {};
-    const o25 = MercadoOverUnder25.analisar(resultados, contextoAtual);
-    const bm = MercadoAmbosMarcam.analisar(resultados, contextoAtual);
-    return {
-      o25: o25?.palpite?.valor || null,
-      btts: bm?.palpite?.valor || null,
-      o45: ocultos.ou45?.palpite?.valor || null,
-      o55: ocultos.ou55?.palpite?.valor || null,
-      golsTop: gols?.palpite?.valor ?? null
-    };
-  },
-
-  analisar(resultados, contextoAtual = resultados) {
+  analisar(resultados) {
     const base = Array.isArray(resultados) ? resultados : [];
-    const atual = Array.isArray(contextoAtual) && contextoAtual.length ? contextoAtual : base;
+    const alvos = base.map(r => this.transformar(r));
+    const frequenciasHistorico = typeof Padroes !== "undefined"
+      ? Padroes.frequencias(alvos, ["MAIS", "MENOS"])
+      : { lista: [] };
 
-    if (base.length < 3 || atual.length < 2) {
+    if (base.length < 12) {
       return {
         ativo: false,
+        especialista: true,
         independente: true,
         palpite: null,
-        frequenciasHistorico: Padroes.frequencias(base.map(r => this.transformar(r)), ['MAIS', 'MENOS']),
+        padrao: { encontrado: false, contexto: [], tamanho: 0, ocorrencias: [], amostra: [], percentual: 0, qualificado: false },
+        frequencias: frequenciasHistorico,
+        frequenciasHistorico,
         evidencias: [],
-        auxiliares: {},
-        metodo: 'over35-ensemble-adaptativo-v2'
+        corridaUnder: 0,
+        faixaAtual: null,
+        metodo: this.METODO
       };
     }
 
-    const serie = base;
-    const ensemble = this._ensemble(serie, atual);
-    const pressaoAlta = this._pressaoAlta(atual);
-    const aux = this._auxiliares(base, atual);
-    const motivos = [];
+    const serie = this._serieComQuebras(base);
+    const corrida = this._corridaAtual(serie);
+    const faixa = this._faixa(corrida);
+    const stats = this._estatisticasPorFaixa(serie);
+    const confirmacao = this._confirmacaoSequencia(serie, 3);
+    const escolhido = faixa ? stats[faixa] : null;
 
-    let chamado = false;
-    let confianca = 0;
+    // Regra operacional do teste: O3.5 é chamado SOMENTE nas distâncias
+    // 5 e 10–13 desde o último Over 3.5. Fora delas, aguarda.
+    const chamado = Boolean(faixa);
+    const taxaFaixa = escolhido?.taxa || 0;
+    const percentual = Number((taxaFaixa * 100).toFixed(1));
 
-    if ((ensemble && ensemble.taxa>=0.40) || (ensemble && ensemble.taxa>=0.34 && aux.o25==='MAIS' && aux.btts==='SIM') || (pressaoAlta && aux.o25==='MAIS')) {
-      chamado=true;
-      confianca=Math.max(confianca,(ensemble?.taxa||0)*100,42);
-      motivos.push('evidência combinada O3.5');
-    }
+    const amostra = escolhido
+      ? Array(escolhido.over).fill("MAIS").concat(Array(escolhido.total - escolhido.over).fill("MENOS"))
+      : [];
+    const frequencias = typeof Padroes !== "undefined"
+      ? Padroes.frequencias(amostra, ["MAIS", "MENOS"])
+      : frequenciasHistorico;
 
-    /*
-     * Segunda porta: três jogos seguidos com 4+ gols.
-     * No backtest walk-forward esta porta recuperou chamadas que o padrão
-     * contextual perdia, inclusive sequências como 4 -> 4 -> 6.
-     */
-    
-
-    // Auxiliares apenas reforçam o diagnóstico; não criam uma chamada sozinhos.
-    if (chamado && aux.o25 === 'MAIS') motivos.push('O2.5 = MAIS');
-    if (chamado && aux.btts === 'SIM') motivos.push('Ambos Marcam = SIM');
-    if (chamado && aux.o45 === 'MAIS') motivos.push('indicador interno O4.5 = MAIS');
-    if (chamado && aux.o55 === 'MAIS') motivos.push('indicador interno O5.5 = MAIS');
-    if (chamado && Number(aux.golsTop) >= 4) motivos.push('Quantidade de Gols = 4+');
-
-    const historico = Padroes.frequencias(base.map(r => this.transformar(r)), ['MAIS', 'MENOS']);
-    const melhor = ensemble?.melhor || null;
+    const ocorrencias = escolhido
+      ? Array.from({ length: escolhido.total }, (_, i) => ({ indice: i, proximoIndice: i + 1 }))
+      : [];
 
     return {
       ativo: chamado,
+      especialista: true,
       independente: true,
       palpite: chamado ? {
-        valor: 'MAIS',
-        quantidade: melhor?.mais || 0,
-        percentual: Number(Math.min(95, Math.max(42, confianca)).toFixed(1))
+        valor: "MAIS",
+        quantidade: escolhido?.over || 0,
+        percentual
       } : null,
-      frequenciasHistorico: historico,
-      evidencias: ensemble?.candidatos || [],
-      evidenciaEscolhida: melhor,
-      pressaoAlta,
-      auxiliares: aux,
-      scoreMais: chamado ? 1 : 0,
-      scoreMenos: 0,
-      motivos,
-      metodo: 'over35-ensemble-adaptativo-v2-pressao-3-jogos'
+      padrao: chamado ? {
+        encontrado: true,
+        contexto: [`${corrida} U3.5 consecutivos`],
+        tamanho: corrida,
+        ocorrencias,
+        amostra,
+        percentual,
+        qualificado: true,
+        faixa,
+        corridaUnder: corrida,
+        confirmacaoSequencia: confirmacao
+      } : {
+        encontrado: false,
+        contexto: [`${corrida} U3.5 consecutivos`],
+        tamanho: corrida,
+        ocorrencias: [],
+        amostra: [],
+        percentual: 0,
+        qualificado: false,
+        faixa: null,
+        corridaUnder: corrida,
+        confirmacaoSequencia: confirmacao
+      },
+      frequencias,
+      frequenciasHistorico,
+      evidencias: [
+        { faixa: "5", ...stats["5"] },
+        { faixa: "10-13", ...stats["10-13"] },
+        { tipo: "confirmacao-sequencia", ...confirmacao }
+      ],
+      corridaUnder: corrida,
+      faixaAtual: faixa,
+      metodo: this.METODO
     };
   }
 };

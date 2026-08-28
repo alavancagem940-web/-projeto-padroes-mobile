@@ -24,7 +24,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     // O BACKUP é exclusivamente base de aprendizado.
     // O histórico atual é reconstruído separadamente a partir dos resultados ao-vivo locais
     // e, quando configurado, do banco compartilhado.
-    const VERSAO_BACKUP = "2026-08-26-847PLUS-TEMPORAL-CICLO5S-OUTROHORARIO-SHARED";
+    const VERSAO_BACKUP = "2026-08-27-SESSAO-CONTINUA-TEMPORAL-FIREBASE-V1";
     const versaoLocal = localStorage.getItem("esportes_virtuais_backup_versao");
     const salvo = typeof Armazenamento !== "undefined" ? Armazenamento.obterDados() : [];
 
@@ -35,25 +35,49 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     localStorage.setItem("esportes_virtuais_backup_versao", VERSAO_BACKUP);
 
-    Historico.carregarDados(backupAtual, false, {baseQuantidade: backupAtual.length});
-    // O backup é sempre a base de estudo; a sequência atual começa vazia antes
-    // de receber os resultados ao-vivo locais/remotos.
-    Historico.definirBaseEstudo(backupAtual.length);
-    localStorage.setItem("esportes_virtuais_base_estudo_qtd", String(backupAtual.length));
+    // Marcadores PAUSA de backups antigos são ignorados. A base de estudo conta
+    // somente placares válidos; a sessão temporal real será contínua.
+    const quantidadeBackupValida = backupAtual.filter(item => {
+      const placar = typeof item === "string" ? item : item?.placar;
+      return placar !== "PAUSA" && typeof placar === "string" && /^\d+x\d+$/i.test(placar.trim());
+    }).length;
 
-    // Banco compartilhado: quando configurado, resultados registrados por qualquer
-    // usuário entram no mesmo histórico atual para todos.
+    Historico.carregarDados(backupAtual, false, {baseQuantidade: quantidadeBackupValida});
+    Historico.definirBaseEstudo(quantidadeBackupValida);
+
+    // Resultados de sessões anteriores continuam sendo aprendizado. Primeiro usa
+    // o que existe localmente como fallback; depois mescla o Firebase.
+    const locaisAnteriores = Array.isArray(salvo) ? salvo.filter(item =>
+      item && typeof item === "object" && item.fonte === "ao-vivo" && item.placar &&
+      item._temporal?.data && item._temporal?.horario
+    ) : [];
+    if (locaisAnteriores.length) Historico.importarResultadosAoVivo(locaisAnteriores, false);
+
+    let remotosAnteriores = [];
+    if (typeof Sincronizacao !== "undefined" && Sincronizacao.configurada()) {
+      try {
+        remotosAnteriores = await Sincronizacao.obterHistoricoCompleto();
+        if (remotosAnteriores.length) Historico.importarResultadosAoVivo(remotosAnteriores, false);
+      } catch (e) {
+        console.warn("Firebase indisponível na abertura; usando histórico local como base:", e);
+      }
+    }
+
+    // A base fixa continua sendo apenas o BACKUP. Todos os resultados reais com
+    // horário permanecem na sequência contínua, inclusive os recuperados do
+    // Firebase em outro dispositivo. Assim a contagem temporal nunca zera.
+    Historico.definirBaseEstudo(quantidadeBackupValida);
+    if (typeof Historico.persistir === "function") Historico.persistir();
+    localStorage.setItem("esportes_virtuais_base_estudo_qtd", String(quantidadeBackupValida));
+
+    // Banco compartilhado: novos resultados de qualquer dispositivo entram na
+    // mesma sequência temporal contínua e são persistidos localmente como cache.
     if (typeof Sincronizacao !== "undefined" && Sincronizacao.configurada()) {
       Sincronizacao.observar(lista => {
         Historico.importarResultadosAoVivo(lista, true);
         if (typeof Interface !== "undefined" && Interface.atualizar) Interface.atualizar();
       });
       await Sincronizacao.iniciar();
-    } else {
-      // Sessão sempre começa limpa. Registros locais anteriores permanecem
-      // salvos no navegador, mas não são tratados como resultado recém-ocorrido
-      // quando o aplicativo é aberto novamente.
-      // Isso evita iniciar a sessão com o último placar antigo ou do backup.
     }
 
     // Se o app foi fechado durante uma partida, o último palpite salvo é

@@ -1,4 +1,4 @@
-const CACHE = "esportes-virtuais-mobile-v14-fix3x0-cache";
+const CACHE = "esportes-virtuais-mobile-v20-consultor-entradas";
 
 const ASSETS = [
   "./",
@@ -6,27 +6,29 @@ const ASSETS = [
   "./manifest.json",
   "./scripts/backup/backup.js",
   "./scripts/dados/armazenamento.js",
-  "./scripts/dados/sincronizacao.js?v=20260826-fix3x0-2",
-  "./scripts/historico/historico.js",
+  "./scripts/dados/sincronizacao.js?v=20260827-temporal-continuo-v1",
+  "./scripts/historico/historico.js?v=20260827-temporal-continuo-v1",
   "./scripts/analise/calculos.js",
-  "./scripts/mercados/resultado-1x2.js",
-  "./scripts/mercados/ambos-marcam.js",
+  "./scripts/mercados/resultado-1x2.js?v=20260826-teste-v1",
+  "./scripts/mercados/ambos-marcam.js?v=20260826-teste-v1",
   "./scripts/mercados/over-under-0.5.js",
-  "./scripts/mercados/over-under-1.5.js",
-  "./scripts/mercados/over-under-2.5.js",
+  "./scripts/mercados/under-0.5.js?v=20260827-ou05-foco-under-v1",
+  "./scripts/mercados/over-under-1.5.js?v=20260826-teste-v1",
+  "./scripts/mercados/over-under-2.5.js?v=20260826-teste-v1",
   "./scripts/mercados/over-under-3.5.js",
-  "./scripts/mercados/over-3.5.js",
-  "./scripts/mercados/placar-exato.js",
-  "./scripts/mercados/gols-exatos.js",
-  "./scripts/analise/padroes.js",
+  "./scripts/mercados/over-3.5.js?v=20260827-temporal-continuo-v1",
+  "./scripts/mercados/placar-exato.js?v=20260826-teste-v1",
+  "./scripts/mercados/gols-exatos.js?v=20260826-teste-v1",
+  "./scripts/analise/padroes.js?v=20260826-teste-v1",
   "./scripts/analise/relogio-partidas.js",
-  "./scripts/analise/temporal.js",
-  "./scripts/analise/previsoes.js",
-  "./scripts/desempenho/green-red.js",
+  "./scripts/analise/temporal.js?v=20260827-temporal-continuo-v1",
+  "./scripts/analise/previsoes.js?v=20260827-temporal-continuo-v1",
+  "./scripts/desempenho/green-red.js?v=20260827-temporal-continuo-v1",
   "./scripts/desempenho/palpites-registrados.js",
-  "./scripts/aprendizado/aprendizado.js",
-  "./scripts/interface/interface.js?v=20260826-fix3x0-2",
-  "./scripts/js/iniciador.js"
+  "./scripts/aprendizado/aprendizado.js?v=20260827-temporal-continuo-v1",
+  "./scripts/estrategia/consultor-entradas.js?v=20260828-consultor-v1",
+  "./scripts/interface/interface.js?v=20260828-consultor-v1",
+  "./scripts/js/iniciador.js?v=20260827-temporal-continuo-v1"
 ];
 
 self.addEventListener("install", event => {
