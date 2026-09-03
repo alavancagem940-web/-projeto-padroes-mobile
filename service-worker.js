@@ -1,13 +1,13 @@
-const CACHE = "esportes-virtuais-mobile-v20-consultor-entradas";
+const CACHE = "esportes-virtuais-mobile-v21-memoria-permanente";
 
 const ASSETS = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./scripts/backup/backup.js",
+  "./scripts/aprendizado/memoria-consolidada.js?v=20260901-memoria-v1",
   "./scripts/dados/armazenamento.js",
-  "./scripts/dados/sincronizacao.js?v=20260827-temporal-continuo-v1",
-  "./scripts/historico/historico.js?v=20260827-temporal-continuo-v1",
+  "./scripts/dados/sincronizacao.js?v=20260901-memoria-v1",
+  "./scripts/historico/historico.js?v=20260901-memoria-v1",
   "./scripts/analise/calculos.js",
   "./scripts/mercados/resultado-1x2.js?v=20260826-teste-v1",
   "./scripts/mercados/ambos-marcam.js?v=20260826-teste-v1",
@@ -25,10 +25,10 @@ const ASSETS = [
   "./scripts/analise/previsoes.js?v=20260827-temporal-continuo-v1",
   "./scripts/desempenho/green-red.js?v=20260827-temporal-continuo-v1",
   "./scripts/desempenho/palpites-registrados.js",
-  "./scripts/aprendizado/aprendizado.js?v=20260827-temporal-continuo-v1",
+  "./scripts/aprendizado/aprendizado.js?v=20260901-memoria-v1",
   "./scripts/estrategia/consultor-entradas.js?v=20260828-consultor-v1",
-  "./scripts/interface/interface.js?v=20260828-consultor-v1",
-  "./scripts/js/iniciador.js?v=20260827-temporal-continuo-v1"
+  "./scripts/interface/interface.js?v=20260901-memoria-v1",
+  "./scripts/js/iniciador.js?v=20260901-memoria-v1"
 ];
 
 self.addEventListener("install", event => {
